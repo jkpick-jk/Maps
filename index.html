@@ -16,7 +16,7 @@ html, body { margin:0; padding:0; height:100%; width:100%; }
 <body>
 <div id="map"></div>
 <script>
-// ======== Firebase setup ========
+// ===== Firebase setup =====
 const firebaseConfig = {
   apiKey: "AIzaSyBPWW0Yoc7xUv7k2RvynoP4UGprcE5-8Gw",
   authDomain: "maps-e8525.firebaseapp.com",
@@ -29,65 +29,77 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ======== Leaflet map ========
+// ===== Leaflet map =====
 const map = L.map('map').setView([0,0], 18);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(map);
 
-// ======== Player marker ========
-let playerMarker = null;
+// ===== Marker icons =====
 const playerIcon = L.divIcon({ html:'<div style="width:16px;height:16px;background:red;border-radius:50%;border:2px solid white"></div>', iconSize:[16,16] });
+const otherIconHTML = '<div style="width:14px;height:14px;background:blue;border-radius:50%;border:2px solid white"></div>';
 
-// ======== Other users ========
-const otherMarkers = {};
-
-// ======== Persistent user ID ========
+// ===== Persistent user ID =====
 let myId = localStorage.getItem('myId');
 if(!myId){
   myId = 'user_' + Math.floor(Math.random()*1000000);
   localStorage.setItem('myId', myId);
 }
 
-// ======== Live tracking ========
+// ===== Markers =====
+let playerMarker = null;
+let otherMarkers = {};
+
+// ===== Smooth movement helper =====
+function moveMarker(marker, newLat, newLon, duration=1000){
+  if(!marker) return;
+  const startLatLng = marker.getLatLng();
+  const startTime = Date.now();
+  
+  function animate(){
+    const now = Date.now();
+    const t = Math.min((now - startTime)/duration,1);
+    const lat = startLatLng.lat + (newLat - startLatLng.lat) * t;
+    const lon = startLatLng.lng + (newLon - startLatLng.lng) * t;
+    marker.setLatLng([lat, lon]);
+    if(t<1) requestAnimationFrame(animate);
+  }
+  animate();
+}
+
+// ===== Track self =====
 let firstUpdate = true;
-function trackMe(userId){
+function updateMyLocation(){
   if(navigator.geolocation){
-    navigator.geolocation.watchPosition(pos=>{
+    navigator.geolocation.getCurrentPosition(pos=>{
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
 
-      // Update map only on first load
+      // Map pans only on first update
       if(firstUpdate){
         map.setView([lat, lon],18);
         firstUpdate = false;
       }
 
-      // Update player marker
-      if(playerMarker) playerMarker.setLatLng([lat, lon]);
-      else playerMarker = L.marker([lat, lon], {icon:playerIcon}).addTo(map);
+      if(!playerMarker) playerMarker = L.marker([lat, lon], {icon:playerIcon}).addTo(map);
+      else moveMarker(playerMarker, lat, lon, 1000); // smooth 1s transition
 
-      // Update Firebase
-      db.ref('locations/'+userId).set({lat, lon, timestamp:Date.now()});
-
-    }, err=>{ console.log('Location error: '+err.message); }, { enableHighAccuracy:true, maximumAge:0 });
-  } else alert('Geolocation not supported');
+      db.ref('locations/'+myId).set({lat, lon, timestamp:Date.now()});
+    }, err=>{ console.log('Location error:', err.message); }, { enableHighAccuracy:true });
+  }
 }
 
-// ======== Listen for others ========
+// Poll every 1s for smooth updates
+setInterval(updateMyLocation, 1000);
+
+// ===== Listen for others =====
 db.ref('locations').on('value', snapshot=>{
-  const users = snapshot.val();
+  const users = snapshot.val() || {};
   for(let uid in users){
     if(uid === myId) continue;
     const data = users[uid];
-    if(otherMarkers[uid]) otherMarkers[uid].setLatLng([data.lat,data.lon]);
-    else{
-      const icon = L.divIcon({ html:'<div style="width:14px;height:14px;background:blue;border-radius:50%;border:2px solid white"></div>', iconSize:[14,14] });
-      otherMarkers[uid] = L.marker([data.lat,data.lon], {icon:icon}).addTo(map);
-    }
+    if(otherMarkers[uid]) moveMarker(otherMarkers[uid], data.lat, data.lon, 1000);
+    else otherMarkers[uid] = L.marker([data.lat,data.lon], {icon:L.divIcon({html:otherIconHTML, iconSize:[14,14]})}).addTo(map);
   }
 });
-
-// ======== Start tracking ========
-trackMe(myId);
 </script>
 </body>
 </html>
