@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Live Radar Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+html, body { margin:0; padding:0; height:100%; width:100%; }
+#map { width:100%; height:100%; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+// ======== Firebase setup ========
+const firebaseConfig = {
+  apiKey: "AIzaSyBPWW0Yoc7xUv7k2RvynoP4UGprcE5-8Gw",
+  authDomain: "maps-e8525.firebaseapp.com",
+  databaseURL: "https://maps-e8525-default-rtdb.firebaseio.com",
+  projectId: "maps-e8525T",
+  storageBucket: "maps-e8525.firebasestorage.app",
+  messagingSenderId: "636915643606",
+  appId: "1:636915643606:web:27bedae0ab2263164a4577"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ======== Leaflet map ========
+const map = L.map('map').setView([0,0], 18);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(map);
+
+// ======== Player marker ========
+let playerMarker = null;
+const playerIcon = L.divIcon({ html:'<div style="width:16px;height:16px;background:red;border-radius:50%;border:2px solid white"></div>', iconSize:[16,16] });
+
+// ======== Other users ========
+const otherMarkers = {};
+
+// ======== Live tracking ========
+function trackMe(userId){
+  if(navigator.geolocation){
+    navigator.geolocation.watchPosition(pos=>{
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+
+      // Update map
+      map.setView([lat, lon],18);
+      if(playerMarker) playerMarker.setLatLng([lat, lon]);
+      else playerMarker = L.marker([lat, lon], {icon:playerIcon}).addTo(map);
+
+      // Update Firebase
+      db.ref('locations/'+userId).set({lat, lon, timestamp:Date.now()});
+
+    }, err=>{ alert('Location error: '+err.message); }, { enableHighAccuracy:true, maximumAge:1000 });
+  } else alert('Geolocation not supported');
+}
+
+// ======== Listen for others ========
+db.ref('locations').on('value', snapshot=>{
+  const users = snapshot.val();
+  for(let uid in users){
+    if(uid === myId) continue;
+    const data = users[uid];
+    if(otherMarkers[uid]){
+      otherMarkers[uid].setLatLng([data.lat,data.lon]);
+    } else {
+      const icon = L.divIcon({ html:'<div style="width:14px;height:14px;background:blue;border-radius:50%;border:2px solid white"></div>', iconSize:[14,14] });
+      otherMarkers[uid] = L.marker([data.lat,data.lon], {icon:icon}).addTo(map);
+    }
+  }
+});
+
+// ======== Unique ID for this user ========
+const myId = 'user_' + Math.floor(Math.random()*1000000);
+trackMe(myId);
+</script>
+</body>
+</html>
