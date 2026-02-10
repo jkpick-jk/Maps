@@ -24,7 +24,7 @@ const firebaseConfig = {
   projectId: "maps-e8525T",
   storageBucket: "maps-e8525.firebasestorage.app",
   messagingSenderId: "636915643606",
-  appId: "1:636915643606:web:27bedae0ab2263164a4577"
+  appId: "1:636915643606:web:27bedae0ab226316316a4577"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
@@ -40,22 +40,35 @@ const playerIcon = L.divIcon({ html:'<div style="width:16px;height:16px;backgrou
 // ======== Other users ========
 const otherMarkers = {};
 
+// ======== Persistent user ID ========
+let myId = localStorage.getItem('myId');
+if(!myId){
+  myId = 'user_' + Math.floor(Math.random()*1000000);
+  localStorage.setItem('myId', myId);
+}
+
 // ======== Live tracking ========
+let firstUpdate = true;
 function trackMe(userId){
   if(navigator.geolocation){
     navigator.geolocation.watchPosition(pos=>{
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
 
-      // Update map
-      map.setView([lat, lon],18);
+      // Update map only on first load
+      if(firstUpdate){
+        map.setView([lat, lon],18);
+        firstUpdate = false;
+      }
+
+      // Update player marker
       if(playerMarker) playerMarker.setLatLng([lat, lon]);
       else playerMarker = L.marker([lat, lon], {icon:playerIcon}).addTo(map);
 
       // Update Firebase
       db.ref('locations/'+userId).set({lat, lon, timestamp:Date.now()});
 
-    }, err=>{ alert('Location error: '+err.message); }, { enableHighAccuracy:true, maximumAge:1000 });
+    }, err=>{ console.log('Location error: '+err.message); }, { enableHighAccuracy:true, maximumAge:0 });
   } else alert('Geolocation not supported');
 }
 
@@ -65,17 +78,15 @@ db.ref('locations').on('value', snapshot=>{
   for(let uid in users){
     if(uid === myId) continue;
     const data = users[uid];
-    if(otherMarkers[uid]){
-      otherMarkers[uid].setLatLng([data.lat,data.lon]);
-    } else {
+    if(otherMarkers[uid]) otherMarkers[uid].setLatLng([data.lat,data.lon]);
+    else{
       const icon = L.divIcon({ html:'<div style="width:14px;height:14px;background:blue;border-radius:50%;border:2px solid white"></div>', iconSize:[14,14] });
       otherMarkers[uid] = L.marker([data.lat,data.lon], {icon:icon}).addTo(map);
     }
   }
 });
 
-// ======== Unique ID for this user ========
-const myId = 'user_' + Math.floor(Math.random()*1000000);
+// ======== Start tracking ========
 trackMe(myId);
 </script>
 </body>
