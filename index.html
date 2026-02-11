@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Custom Map with Tracking</title>
+  <title>Custom Map with Mobile Tracking</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Leaflet CSS -->
@@ -16,24 +16,33 @@
       height: 100%;
       width: 100%;
     }
+    #locateBtn {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-weight: bold;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <button id="locateBtn">Find Me</button>
 
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    // Initialize map
-    const map = L.map('map').setView([14.5995, 120.9842], 15) // Manila default
-
-    // Add OpenStreetMap tiles
+    const map = L.map('map').setView([14.5995, 120.9842], 15); // Default Manila
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // Add a marker for your location
     const marker = L.circleMarker([14.5995, 120.9842], {
       radius: 8,
       color: "#ffffff",
@@ -41,23 +50,25 @@
       fillOpacity: 1
     }).addTo(map).bindPopup("You are here");
 
-    // Track your location in real-time
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(
-        (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          marker.setLatLng([lat, lng]);
-          map.setView([lat, lng]); // Center map on your location
-        },
-        (error) => {
-          alert("Error getting location: " + error.message);
-        },
-        { enableHighAccuracy: true, maximumAge: 0 }
-      );
-    } else {
-      alert("Geolocation is not supported by your browser");
-    }
+    // Button to request location
+    document.getElementById("locateBtn").addEventListener("click", () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            marker.setLatLng([lat, lng]);
+            map.setView([lat, lng], 15); // center map on location
+          },
+          (error) => {
+            alert("Error getting location: " + error.message);
+          },
+          { enableHighAccuracy: true, maximumAge: 0 }
+        );
+      } else {
+        alert("Geolocation is not supported by your browser");
+      }
+    });
   </script>
 </body>
 </html>
