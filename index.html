@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Accurate Mobile Map</title>
+  <title>Multi-User Map</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -37,57 +37,111 @@
   <button id="locateBtn">Find Me</button>
   <div id="status"></div>
 
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Firebase JS -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
   <script>
+    // ===== FIREBASE CONFIG =====
+    const firebaseConfig = {
+      apiKey: "AIzaSyCjgp9FkDk7DzaMMEjHVMb3KdByEY3ehIs",
+      authDomain: "multimaps-f44a4.firebaseapp.com",
+      databaseURL: "https://multimaps-f44a4-default-rtdb.firebaseio.com/",
+      projectId: "multimaps-f44a4",
+      storageBucket: "multimaps-f44a4.appspot.com",
+      messagingSenderId: "784214151922",
+      appId: "1:784214151922:web:59de8fdaaaa7a059f9f66b"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // ===== MAP SETUP =====
     const map = L.map('map').setView([14.5995, 120.9842], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    const marker = L.circleMarker([14.5995, 120.9842], {
+    const statusDiv = document.getElementById("status");
+
+    // YOUR BLUE DOT
+    const myMarker = L.circleMarker([14.5995, 120.9842], {
       radius: 8,
       color: "#ffffff",
       fillColor: "#4285F4",
       fillOpacity: 1
-    }).addTo(map).bindPopup("You are here");
+    }).addTo(map).bindPopup("You");
 
-    const statusDiv = document.getElementById("status");
+    // FRIENDS RED DOTS
+    const friendsMarkers = {};
 
+    // UNIQUE ID FOR THIS USER
+    const userId = 'user_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+
+    // ===== LOCATION BUTTON =====
     document.getElementById("locateBtn").addEventListener("click", () => {
-      if (!navigator.geolocation) {
-        alert("Geolocation is not supported by your browser");
-        return;
-      }
+      if (!navigator.geolocation) { alert("Geolocation not supported"); return; }
 
-      statusDiv.innerText = "Searching for GPS signal… Go outside if possible";
+      statusDiv.innerText = "Searching for GPS signal… go outside";
 
-      // First try to get a high-accuracy fix
+      // First get accurate fix
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-          marker.setLatLng([lat, lng]);
+          myMarker.setLatLng([lat, lng]);
           map.setView([lat, lng], 16);
           statusDiv.innerText = "Location found!"
-          
-          // Now start watching for movement
+
+          // Write initial location to Firebase
+          db.ref('users/' + userId).set({lat, lng});
+
+          // Start watching for movement
           navigator.geolocation.watchPosition(
             (pos) => {
               const lat = pos.coords.latitude;
               const lng = pos.coords.longitude;
-              marker.setLatLng([lat, lng]);
+              myMarker.setLatLng([lat, lng]);
               map.setView([lat, lng]);
+
+              // Update Firebase
+              db.ref('users/' + userId).set({lat, lng});
             },
             (err) => { statusDiv.innerText = "Error: " + err.message; },
             { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
           );
+
         },
-        (error) => {
-          statusDiv.innerText = "Error getting GPS: " + error.message;
-        },
+        (error) => { statusDiv.innerText = "Error getting GPS: " + error.message; },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
+    });
+
+    // ===== LISTEN FOR OTHER USERS =====
+    db.ref('users').on('value', (snapshot) => {
+      const data = snapshot.val() || {};
+      for (const id in data) {
+        if (id === userId) continue; // skip yourself
+
+        const {lat, lng} = data[id];
+        if (friendsMarkers[id]) {
+          friendsMarkers[id].setLatLng([lat, lng]);
+        } else {
+          friendsMarkers[id] = L.circleMarker([lat, lng], {
+            radius: 8,
+            color: "#ffffff",
+            fillColor: "#FF3B3B",
+            fillOpacity: 1
+          }).addTo(map).bindPopup("Friend");
+        }
+      }
+    });
+
+    // Remove yourself from Firebase on page close
+    window.addEventListener("beforeunload", () => {
+      db.ref('users/' + userId).remove();
     });
   </script>
 </body>
