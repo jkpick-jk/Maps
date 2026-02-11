@@ -1,182 +1,111 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Live Radar Map</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-
-<style>
-html, body { margin:0; padding:0; height:100%; width:100%; }
-#map { width:100%; height:100%; }
-
-/* UI PANEL */
-#panel{
-  position:absolute;
-  top:10px;
-  right:10px;
-  width:160px;
-  background:white;
-  padding:10px;
-  border-radius:8px;
-  box-shadow:0 4px 10px rgba(0,0,0,0.2);
-  font-family:Arial;
-  z-index:1000;
-}
-
-#panel button{
-  width:100%;
-  padding:8px;
-  margin-top:8px;
-  border:none;
-  border-radius:6px;
-  background:#007bff;
-  color:white;
-  font-weight:bold;
-}
-</style>
-</head>
-
-<body>
-<div id="map"></div>
-
-<div id="panel">
-  <b>Radar Controls</b>
-  <button onclick="refreshMap()">Refresh Map</button>
-  <button onclick="clearAll()">Reset All Dots</button>
-</div>
-
 <script>
 
-// ===== Firebase =====
+// ===== Firebase (keep your config) =====
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
+  apiKey: "AIzaSyBPWW0Yoc7xUv7k2RvynoP4UGprcE5-8Gw",
   authDomain: "maps-e8525.firebaseapp.com",
   databaseURL: "https://maps-e8525-default-rtdb.firebaseio.com",
-  projectId: "maps-e8525T",
+  projectId: "maps-e8525"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 // ===== Map =====
-const map = L.map('map').setView([0,0], 18);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const map = L.map('map').setView([20,0], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:19
+}).addTo(map);
 
-// ===== Persistent ID =====
-let myId = localStorage.getItem('myId');
+// ===== User ID =====
+let myId = localStorage.getItem('radar_id');
 if(!myId){
   myId = 'user_' + Math.floor(Math.random()*1000000);
-  localStorage.setItem('myId', myId);
+  localStorage.setItem('radar_id', myId);
 }
+
+db.ref("locations/"+myId).onDisconnect().remove();
 
 // ===== Icons =====
-const redIcon = L.divIcon({html:'<div style="width:16px;height:16px;background:red;border-radius:50%;border:2px solid white"></div>',iconSize:[16,16]});
-const blueIcon = L.divIcon({html:'<div style="width:14px;height:14px;background:blue;border-radius:50%;border:2px solid white"></div>',iconSize:[14,14]});
+const redIcon = L.divIcon({
+  html:'<div style="width:18px;height:18px;background:red;border-radius:50%;border:2px solid white"></div>',
+  iconSize:[18,18]
+});
 
-let playerMarker;
+const blueIcon = L.divIcon({
+  html:'<div style="width:14px;height:14px;background:deepskyblue;border-radius:50%;border:2px solid white"></div>',
+  iconSize:[14,14]
+});
+
+let playerMarker = null;
 let otherMarkers = {};
-let firstUpdate = true;
+let watchId = null;
 
-// ===== Remove user when disconnecting =====
-db.ref('locations/'+myId).onDisconnect().remove();
+// ===== SHARE LOCATION BUTTON =====
+function shareLocation(){
 
-// ===== Smooth move =====
-function moveMarker(marker, newLat, newLon){
-  const start = marker.getLatLng();
-  const startTime = Date.now();
-  const duration = 800;
+  document.getElementById("gpsStatus").innerText = "Requesting permission...";
 
-  function animate(){
-    const t = Math.min((Date.now()-startTime)/duration,1);
-    const lat = start.lat + (newLat-start.lat)*t;
-    const lon = start.lng + (newLon-start.lng)*t;
-    marker.setLatLng([lat,lon]);
-    if(t<1) requestAnimationFrame(animate);
-  }
-  animate();
-}
-
-// ===== TRACKING (better mobile version) =====
-function startTracking(){
   if(!navigator.geolocation){
-    alert("Geolocation not supported");
+    alert("Geolocation not supported.");
     return;
   }
 
-  navigator.geolocation.watchPosition(pos=>{
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
+  watchId = navigator.geolocation.watchPosition(position => {
 
-    if(firstUpdate){
-      map.setView([lat,lon],18);
-      firstUpdate=false;
-    }
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const accuracy = position.coords.accuracy;
 
+    document.getElementById("accuracyDisplay").innerText =
+      Math.round(accuracy) + " m";
+
+    document.getElementById("gpsStatus").innerText = "Location Active";
+
+    // Create marker first time
     if(!playerMarker){
-      playerMarker = L.marker([lat,lon],{icon:redIcon}).addTo(map);
-    }else{
-      moveMarker(playerMarker,lat,lon);
+      playerMarker = L.marker([lat,lng],{icon:redIcon}).addTo(map);
+      map.setView([lat,lng],16);
+    } else {
+      playerMarker.setLatLng([lat,lng]);
     }
 
-    db.ref('locations/'+myId).set({
-      lat,
-      lon,
+    db.ref("locations/"+myId).set({
+      lat:lat,
+      lng:lng,
       timestamp:Date.now()
     });
 
-  }, err=>{
-    console.log(err.message);
+  }, error => {
+    document.getElementById("gpsStatus").innerText =
+      "Permission denied or unavailable";
   },{
     enableHighAccuracy:true,
-    maximumAge:0,
-    timeout:5000
+    maximumAge:0
   });
+
 }
 
-startTracking();
+// ===== Load Other Users =====
+db.ref("locations").on("value", snapshot => {
 
-// ===== LISTEN FOR USERS =====
-db.ref('locations').on('value', snapshot=>{
-  const users = snapshot.val() || {};
-  const activeIds = Object.keys(users);
+  const data = snapshot.val() || {};
+  document.getElementById("onlineCount").innerText =
+    Object.keys(data).length;
 
-  // Update / create markers
-  for(let uid in users){
-    if(uid === myId) continue;
+  for(let id in data){
 
-    const data = users[uid];
+    if(id === myId) continue;
 
-    if(otherMarkers[uid]){
-      moveMarker(otherMarkers[uid],data.lat,data.lon);
-    }else{
-      otherMarkers[uid] = L.marker([data.lat,data.lon],{icon:blueIcon}).addTo(map);
-    }
-  }
+    const lat = data[id].lat;
+    const lng = data[id].lng;
 
-  // Remove disconnected users
-  for(let uid in otherMarkers){
-    if(!activeIds.includes(uid)){
-      map.removeLayer(otherMarkers[uid]);
-      delete otherMarkers[uid];
+    if(!otherMarkers[id]){
+      otherMarkers[id] =
+        L.marker([lat,lng],{icon:blueIcon}).addTo(map);
+    } else {
+      otherMarkers[id].setLatLng([lat,lng]);
     }
   }
 });
 
-// ===== UI FUNCTIONS =====
-function refreshMap(){
-  location.reload();
-}
-
-function clearAll(){
-  for(let uid in otherMarkers){
-    map.removeLayer(otherMarkers[uid]);
-  }
-  otherMarkers = {};
-}
-
 </script>
-</body>
-</html>
