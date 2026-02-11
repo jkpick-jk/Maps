@@ -1,21 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Custom Map with Mobile Tracking</title>
+  <title>Accurate Mobile Map</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-    }
-    #map {
-      height: 100%;
-      width: 100%;
-    }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    #map { height: 100%; width: 100%; }
     #locateBtn {
       position: absolute;
       top: 10px;
@@ -28,16 +20,26 @@
       font-weight: bold;
       cursor: pointer;
     }
+    #status {
+      position: absolute;
+      top: 50px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(255,255,255,0.9);
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <button id="locateBtn">Find Me</button>
+  <div id="status"></div>
 
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([14.5995, 120.9842], 15); // Default Manila
+    const map = L.map('map').setView([14.5995, 120.9842], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -50,24 +52,42 @@
       fillOpacity: 1
     }).addTo(map).bindPopup("You are here");
 
-    // Button to request location
+    const statusDiv = document.getElementById("status");
+
     document.getElementById("locateBtn").addEventListener("click", () => {
-      if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(
-          (position) => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            marker.setLatLng([lat, lng]);
-            map.setView([lat, lng], 15); // center map on location
-          },
-          (error) => {
-            alert("Error getting location: " + error.message);
-          },
-          { enableHighAccuracy: true, maximumAge: 0 }
-        );
-      } else {
+      if (!navigator.geolocation) {
         alert("Geolocation is not supported by your browser");
+        return;
       }
+
+      statusDiv.innerText = "Searching for GPS signal… Go outside if possible";
+
+      // First try to get a high-accuracy fix
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          marker.setLatLng([lat, lng]);
+          map.setView([lat, lng], 16);
+          statusDiv.innerText = "Location found!"
+          
+          // Now start watching for movement
+          navigator.geolocation.watchPosition(
+            (pos) => {
+              const lat = pos.coords.latitude;
+              const lng = pos.coords.longitude;
+              marker.setLatLng([lat, lng]);
+              map.setView([lat, lng]);
+            },
+            (err) => { statusDiv.innerText = "Error: " + err.message; },
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+          );
+        },
+        (error) => {
+          statusDiv.innerText = "Error getting GPS: " + error.message;
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
     });
   </script>
 </body>
