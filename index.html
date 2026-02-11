@@ -1,111 +1,63 @@
-<script>
-
-// ===== Firebase (keep your config) =====
-const firebaseConfig = {
-  apiKey: "AIzaSyBPWW0Yoc7xUv7k2RvynoP4UGprcE5-8Gw",
-  authDomain: "maps-e8525.firebaseapp.com",
-  databaseURL: "https://maps-e8525-default-rtdb.firebaseio.com",
-  projectId: "maps-e8525"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-// ===== Map =====
-const map = L.map('map').setView([20,0], 2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom:19
-}).addTo(map);
-
-// ===== User ID =====
-let myId = localStorage.getItem('radar_id');
-if(!myId){
-  myId = 'user_' + Math.floor(Math.random()*1000000);
-  localStorage.setItem('radar_id', myId);
-}
-
-db.ref("locations/"+myId).onDisconnect().remove();
-
-// ===== Icons =====
-const redIcon = L.divIcon({
-  html:'<div style="width:18px;height:18px;background:red;border-radius:50%;border:2px solid white"></div>',
-  iconSize:[18,18]
-});
-
-const blueIcon = L.divIcon({
-  html:'<div style="width:14px;height:14px;background:deepskyblue;border-radius:50%;border:2px solid white"></div>',
-  iconSize:[14,14]
-});
-
-let playerMarker = null;
-let otherMarkers = {};
-let watchId = null;
-
-// ===== SHARE LOCATION BUTTON =====
-function shareLocation(){
-
-  document.getElementById("gpsStatus").innerText = "Requesting permission...";
-
-  if(!navigator.geolocation){
-    alert("Geolocation not supported.");
-    return;
-  }
-
-  watchId = navigator.geolocation.watchPosition(position => {
-
-    const lat = position.coords.latitude;
-    const lng = position.coords.longitude;
-    const accuracy = position.coords.accuracy;
-
-    document.getElementById("accuracyDisplay").innerText =
-      Math.round(accuracy) + " m";
-
-    document.getElementById("gpsStatus").innerText = "Location Active";
-
-    // Create marker first time
-    if(!playerMarker){
-      playerMarker = L.marker([lat,lng],{icon:redIcon}).addTo(map);
-      map.setView([lat,lng],16);
-    } else {
-      playerMarker.setLatLng([lat,lng]);
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Custom Map with Tracking</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
     }
-
-    db.ref("locations/"+myId).set({
-      lat:lat,
-      lng:lng,
-      timestamp:Date.now()
-    });
-
-  }, error => {
-    document.getElementById("gpsStatus").innerText =
-      "Permission denied or unavailable";
-  },{
-    enableHighAccuracy:true,
-    maximumAge:0
-  });
-
-}
-
-// ===== Load Other Users =====
-db.ref("locations").on("value", snapshot => {
-
-  const data = snapshot.val() || {};
-  document.getElementById("onlineCount").innerText =
-    Object.keys(data).length;
-
-  for(let id in data){
-
-    if(id === myId) continue;
-
-    const lat = data[id].lat;
-    const lng = data[id].lng;
-
-    if(!otherMarkers[id]){
-      otherMarkers[id] =
-        L.marker([lat,lng],{icon:blueIcon}).addTo(map);
-    } else {
-      otherMarkers[id].setLatLng([lat,lng]);
+    #map {
+      height: 100%;
+      width: 100%;
     }
-  }
-});
+  </style>
+</head>
+<body>
+  <div id="map"></div>
 
-</script>
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // Initialize map
+    const map = L.map('map').setView([14.5995, 120.9842], 15) // Manila default
+
+    // Add OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Add a marker for your location
+    const marker = L.circleMarker([14.5995, 120.9842], {
+      radius: 8,
+      color: "#ffffff",
+      fillColor: "#4285F4",
+      fillOpacity: 1
+    }).addTo(map).bindPopup("You are here");
+
+    // Track your location in real-time
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          marker.setLatLng([lat, lng]);
+          map.setView([lat, lng]); // Center map on your location
+        },
+        (error) => {
+          alert("Error getting location: " + error.message);
+        },
+        { enableHighAccuracy: true, maximumAge: 0 }
+      );
+    } else {
+      alert("Geolocation is not supported by your browser");
+    }
+  </script>
+</body>
+</html>
