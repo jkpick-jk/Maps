@@ -1,5 +1,5 @@
 <script>
-  // Initialize Firebase
+  // ===== FIREBASE CONFIG =====
   const firebaseConfig = {
     apiKey: "AIzaSyCjgp9FkDk7DzaMMEjHVMb3KdByEY3ehIs",
     authDomain: "multimaps-f44a4.firebaseapp.com",
@@ -13,28 +13,111 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  // Create unique user ID
-  const userId = "user_" + Math.random().toString(36).substr(2, 9);
+  // ===== MAP SETUP =====
+  const map = L.map('map').setView([14.5995, 120.9842], 15);
 
-  // Store markers
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const statusDiv = document.getElementById("status");
+
+  // ===== USER SETUP =====
+  const userId = 'user_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+
   let myMarker = null;
-  let otherMarkers = {};
+  const friendsMarkers = {};
 
-  // Find Me button
-  document.getElementById("findMe").addEventListener("click", () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(position => {
+  // ===== FIND ME BUTTON =====
+  document.getElementById("locateBtn").addEventListener("click", () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported");
+      return;
+    }
+
+    statusDiv.innerText = "Searching for GPS signal…";
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
-        // Update your location in Firebase
-        db.ref("users/" + userId).set({
-          lat: lat,
-          lng: lng
-        });
-
-        // Add or update your marker (blue)
+        // Create your marker (blue)
         if (!myMarker) {
+          myMarker = L.circleMarker([lat, lng], {
+            radius: 8,
+            color: "#ffffff",
+            fillColor: "#4285F4",
+            fillOpacity: 1
+          }).addTo(map).bindPopup("You");
+        } else {
+          myMarker.setLatLng([lat, lng]);
+        }
+
+        map.setView([lat, lng], 16);
+        statusDiv.innerText = "Location found!";
+
+        // Save to Firebase
+        db.ref('users/' + userId).set({ lat, lng });
+
+        // Watch movement
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+
+            myMarker.setLatLng([lat, lng]);
+            db.ref('users/' + userId).set({ lat, lng });
+          },
+          (err) => {
+            statusDiv.innerText = "GPS Error: " + err.message;
+          },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+        );
+      },
+      (error) => {
+        statusDiv.innerText = "Error getting GPS: " + error.message;
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+
+  // ===== LISTEN FOR OTHER USERS (REALTIME) =====
+  db.ref('users').on('value', (snapshot) => {
+    const data = snapshot.val() || {};
+
+    for (const id in data) {
+      if (id === userId) continue;
+
+      const { lat, lng } = data[id];
+
+      if (friendsMarkers[id]) {
+        friendsMarkers[id].setLatLng([lat, lng]);
+      } else {
+        friendsMarkers[id] = L.circleMarker([lat, lng], {
+          radius: 8,
+          color: "#ffffff",
+          fillColor: "#000000",
+          fillOpacity: 1
+        }).addTo(map).bindPopup("Friend");
+      }
+    }
+
+    // Remove users who left
+    for (const id in friendsMarkers) {
+      if (!data[id]) {
+        map.removeLayer(friendsMarkers[id]);
+        delete friendsMarkers[id];
+      }
+    }
+  });
+
+  // ===== REMOVE USER ON TAB CLOSE =====
+  window.addEventListener("beforeunload", () => {
+    db.ref('users/' + userId).remove();
+  });
+</script>        if (!myMarker) {
           myMarker = L.circleMarker([lat, lng], {
             radius: 8,
             fillColor: "#007BFF",
