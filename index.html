@@ -1,40 +1,96 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Multi-User Map</title>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <style>
-    html, body { height: 100%; margin: 0; padding: 0; }
-    #map { height: 100%; width: 100%; }
-    #locateBtn {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 1000;
-      background: white;
-      border: 1px solid #ccc;
-      padding: 8px 12px;
-      border-radius: 4px;
-      font-weight: bold;
-      cursor: pointer;
+<script>
+  // Initialize Firebase
+  const firebaseConfig = {
+    apiKey: "AIzaSyCjgp9FkDk7DzaMMEjHVMb3KdByEY3ehIs",
+    authDomain: "multimaps-f44a4.firebaseapp.com",
+    databaseURL: "https://multimaps-f44a4-default-rtdb.firebaseio.com/",
+    projectId: "multimaps-f44a4",
+    storageBucket: "multimaps-f44a4.appspot.com",
+    messagingSenderId: "784214151922",
+    appId: "1:784214151922:web:59de8fdaaaa7a059f9f66b"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  // Create unique user ID
+  const userId = "user_" + Math.random().toString(36).substr(2, 9);
+
+  // Store markers
+  let myMarker = null;
+  let otherMarkers = {};
+
+  // Find Me button
+  document.getElementById("findMe").addEventListener("click", () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(position => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        // Update your location in Firebase
+        db.ref("users/" + userId).set({
+          lat: lat,
+          lng: lng
+        });
+
+        // Add or update your marker (blue)
+        if (!myMarker) {
+          myMarker = L.circleMarker([lat, lng], {
+            radius: 8,
+            fillColor: "#007BFF",
+            color: "#ffffff",
+            weight: 2,
+            fillOpacity: 1
+          }).addTo(map).bindPopup("You");
+        } else {
+          myMarker.setLatLng([lat, lng]);
+        }
+
+        map.setView([lat, lng], 15);
+      });
     }
-    #status {
-      position: absolute;
-      top: 50px;
-      left: 10px;
-      z-index: 1000;
-      background: rgba(255,255,255,0.9);
-      padding: 6px 10px;
-      border-radius: 4px;
-      font-size: 14px;
+  });
+
+  // Listen for ALL users (real-time)
+  db.ref("users").on("value", snapshot => {
+    const users = snapshot.val();
+    if (!users) return;
+
+    for (const id in users) {
+      const { lat, lng } = users[id];
+
+      // Skip yourself
+      if (id === userId) continue;
+
+      // If marker doesn't exist, create it
+      if (!otherMarkers[id]) {
+        otherMarkers[id] = L.circleMarker([lat, lng], {
+          radius: 8,
+          fillColor: "#000000",
+          color: "#ffffff",
+          weight: 2,
+          fillOpacity: 1
+        }).addTo(map).bindPopup("Friend");
+      } else {
+        // Update existing marker
+        otherMarkers[id].setLatLng([lat, lng]);
+      }
     }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <button id="locateBtn">Find Me</button>
+
+    // Remove users who left
+    for (const id in otherMarkers) {
+      if (!users[id]) {
+        map.removeLayer(otherMarkers[id]);
+        delete otherMarkers[id];
+      }
+    }
+  });
+
+  // Remove yourself when leaving page
+  window.addEventListener("beforeunload", () => {
+    db.ref("users/" + userId).remove();
+  });
+</script>  <button id="locateBtn">Find Me</button>
   <div id="status"></div>
 
   <!-- Leaflet JS -->
