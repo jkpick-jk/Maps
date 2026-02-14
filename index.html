@@ -1,4 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Multi User Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+  <style>
+    body { margin: 0; }
+    #map { height: 100vh; }
+    #locateBtn {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      z-index: 1000;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #status {
+      position: absolute;
+      top: 60px;
+      left: 15px;
+      z-index: 1000;
+      background: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+
+<button id="locateBtn">Find Me</button>
+<div id="status"></div>
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
 <script>
+  // ===== FIREBASE CONFIG =====
   const firebaseConfig = {
     apiKey: "AIzaSyCjgp9FkDk7DzaMMEjHVMb3KdByEY3ehIs",
     authDomain: "multimaps-f44a4.firebaseapp.com",
@@ -12,6 +64,7 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
+  // ===== MAP SETUP =====
   const map = L.map('map').setView([14.5995, 120.9842], 15);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -21,24 +74,27 @@
 
   const statusDiv = document.getElementById("status");
 
+  // ===== USER SETUP =====
   const userId = 'user_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-
   let myMarker = null;
   const friendsMarkers = {};
 
+  // ===== FIND ME BUTTON =====
   document.getElementById("locateBtn").addEventListener("click", () => {
+
     if (!navigator.geolocation) {
       alert("Geolocation not supported");
       return;
     }
 
-    statusDiv.innerText = "Searching for GPS signal…";
+    statusDiv.innerText = "Getting location...";
 
-    navigator.geolocation.getCurrentPosition(
+    navigator.geolocation.watchPosition(
       (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
+        // Create or update your blue marker
         if (!myMarker) {
           myMarker = L.circleMarker([lat, lng], {
             radius: 8,
@@ -51,38 +107,27 @@
         }
 
         map.setView([lat, lng], 16);
-        statusDiv.innerText = "Location found!";
 
-        db.ref('users/' + userId).set({ lat, lng });
+        // Save to Firebase
+        db.ref("users/" + userId).set({ lat, lng });
 
-        navigator.geolocation.watchPosition(
-          (pos) => {
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-
-            myMarker.setLatLng([lat, lng]);
-            db.ref('users/' + userId).set({ lat, lng });
-          },
-          (err) => {
-            statusDiv.innerText = "GPS Error: " + err.message;
-          },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-        );
+        statusDiv.innerText = "Location active!";
       },
       (error) => {
-        statusDiv.innerText = "Error getting GPS: " + error.message;
+        statusDiv.innerText = "GPS Error: " + error.message;
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true }
     );
   });
 
-  db.ref('users').on('value', (snapshot) => {
-    const data = snapshot.val() || {};
+  // ===== REALTIME LISTENER =====
+  db.ref("users").on("value", (snapshot) => {
+    const users = snapshot.val() || {};
 
-    for (const id in data) {
+    for (const id in users) {
       if (id === userId) continue;
 
-      const { lat, lng } = data[id];
+      const { lat, lng } = users[id];
 
       if (friendsMarkers[id]) {
         friendsMarkers[id].setLatLng([lat, lng]);
@@ -96,15 +141,20 @@
       }
     }
 
+    // Remove users who left
     for (const id in friendsMarkers) {
-      if (!data[id]) {
+      if (!users[id]) {
         map.removeLayer(friendsMarkers[id]);
         delete friendsMarkers[id];
       }
     }
   });
 
+  // Remove yourself when closing
   window.addEventListener("beforeunload", () => {
-    db.ref('users/' + userId).remove();
+    db.ref("users/" + userId).remove();
   });
 </script>
+
+</body>
+</html>
