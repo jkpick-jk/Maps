@@ -1,193 +1,110 @@
-#include <MCUFRIEND_kbv.h>
-#include <Adafruit_GFX.h>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyCjgp9FkDk7DzaMMEjHVMb3KdByEY3ehIs",
+    authDomain: "multimaps-f44a4.firebaseapp.com",
+    databaseURL: "https://multimaps-f44a4-default-rtdb.firebaseio.com/",
+    projectId: "multimaps-f44a4",
+    storageBucket: "multimaps-f44a4.appspot.com",
+    messagingSenderId: "784214151922",
+    appId: "1:784214151922:web:59de8fdaaaa7a059f9f66b"
+  };
 
-MCUFRIEND_kbv tft;
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
 
-#define C_BG     0x0000
-#define C_ROAD   0x7BEF
-#define C_WATER  0x001F
-#define C_BUILD  0xFFFF
-#define C_BRIDGE 0xA145
-#define C_PLAYER 0x001F   // Blue
-#define C_OTHER  0xF800   // Red
+  const map = L.map('map').setView([14.5995, 120.9842], 15);
 
-int pixelSize = 8;
-int gridW = 60;
-int gridH = 40;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
 
-int roadY[60];
-int riverX[40];
+  const statusDiv = document.getElementById("status");
 
-int carX = 0;
-int carY = 0;
+  const userId = 'user_' + Date.now() + '_' + Math.floor(Math.random()*1000);
 
-// Incoming cars
-struct OtherCar {
-  int x;
-  int y;
-};
-OtherCar others[3]; // 3 other cars
+  let myMarker = null;
+  const friendsMarkers = {};
 
-float slope = 0;
-float targetSlope = 0;
+  document.getElementById("locateBtn").addEventListener("click", () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported");
+      return;
+    }
 
-// Fake coordinates for simulation
-float lat = 14.0;
-float lon = 121.0;
+    statusDiv.innerText = "Searching for GPS signal…";
 
-void drawBlock(int x, int y, uint16_t color) {
-  tft.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize, color);
-}
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
 
-void drawCircleBlock(int x, int y, uint16_t color) {
-  int cx = x * pixelSize + pixelSize / 2;
-  int cy = y * pixelSize + pixelSize / 2;
-  tft.fillCircle(cx, cy, pixelSize / 2, color);
-}
+        if (!myMarker) {
+          myMarker = L.circleMarker([lat, lng], {
+            radius: 8,
+            color: "#ffffff",
+            fillColor: "#4285F4",
+            fillOpacity: 1
+          }).addTo(map).bindPopup("You");
+        } else {
+          myMarker.setLatLng([lat, lng]);
+        }
 
-bool isRiver(int x, int y) {
-  return abs(x - riverX[y]) <= 2;
-}
+        map.setView([lat, lng], 16);
+        statusDiv.innerText = "Location found!";
 
-void generateRiver() {
-  int rx = random(10, gridW - 10);
-  float riverSlope = 0;
+        db.ref('users/' + userId).set({ lat, lng });
 
-  for (int y = 0; y < gridH; y++) {
-    if (random(0, 10) == 0) riverSlope = random(-10, 11) / 20.0;
-    rx += riverSlope;
-    if (rx < 3) rx = 3;
-    if (rx > gridW - 4) rx = gridW - 4;
-    riverX[y] = rx;
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
 
-    for (int w = -2; w <= 2; w++)
-      drawBlock(rx + w, y, C_WATER);
-  }
-}
+            myMarker.setLatLng([lat, lng]);
+            db.ref('users/' + userId).set({ lat, lng });
+          },
+          (err) => {
+            statusDiv.innerText = "GPS Error: " + err.message;
+          },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+        );
+      },
+      (error) => {
+        statusDiv.innerText = "Error getting GPS: " + error.message;
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
 
-void generateRoad() {
-  int y = gridH / 2;
-  slope = 0;
-  targetSlope = 0;
+  db.ref('users').on('value', (snapshot) => {
+    const data = snapshot.val() || {};
 
-  for (int x = 0; x < gridW; x++) {
-    if (random(0, 15) == 0) targetSlope = random(-10, 11) / 20.0;
-    slope += (targetSlope - slope) * 0.1;
-    y += slope;
-    if (y < 6) y = 6;
-    if (y > gridH - 6) y = gridH - 6;
+    for (const id in data) {
+      if (id === userId) continue;
 
-    roadY[x] = y;
+      const { lat, lng } = data[id];
 
-    for (int w = -2; w <= 2; w++) {
-      int drawY = y + w;
-      if (drawY >= 0 && drawY < gridH) {
-        if (isRiver(x, drawY))
-          drawBlock(x, drawY, C_BRIDGE);
-        else
-          drawBlock(x, drawY, C_ROAD);
+      if (friendsMarkers[id]) {
+        friendsMarkers[id].setLatLng([lat, lng]);
+      } else {
+        friendsMarkers[id] = L.circleMarker([lat, lng], {
+          radius: 8,
+          color: "#ffffff",
+          fillColor: "#000000",
+          fillOpacity: 1
+        }).addTo(map).bindPopup("Friend");
       }
     }
-  }
-}
 
-void generateNeighborhoods() {
-  for (int n = 0; n < 3; n++) {
-    int startX = random(5, gridW - 15);
-    int startY = random(5, gridH - 15);
-
-    for (int x = 0; x < 10; x += 2)
-      for (int y = 0; y < 10; y += 2) {
-        int gx = startX + x;
-        int gy = startY + y;
-        if (!isRiver(gx, gy) && abs(gy - roadY[gx]) > 4) {
-          drawBlock(gx, gy, C_BUILD);
-          drawBlock(gx + 1, gy, C_BUILD);
-          drawBlock(gx, gy + 1, C_BUILD);
-          drawBlock(gx + 1, gy + 1, C_BUILD);
-        }
+    for (const id in friendsMarkers) {
+      if (!data[id]) {
+        map.removeLayer(friendsMarkers[id]);
+        delete friendsMarkers[id];
       }
-  }
-}
+    }
+  });
 
-void generateIncomingCars() {
-  for (int i = 0; i < 3; i++) {
-    int spawnX = random(0, gridW / 2);
-    int spawnY = roadY[spawnX];
-    others[i].x = spawnX;
-    others[i].y = spawnY;
-  }
-}
-
-void generateMap() {
-  tft.fillScreen(C_BG);
-
-  generateRiver();
-  generateRoad();
-  generateNeighborhoods();
-  generateIncomingCars();
-
-  carX = 0;
-  carY = roadY[0];
-  lat = 14.0;
-  lon = 121.0;
-}
-
-void drawCoordinates() {
-  tft.setCursor(2, 2);
-  tft.setTextColor(C_BUILD);
-  tft.setTextSize(1);
-  tft.print("Lat: "); tft.print(lat, 3);
-  tft.print("  Lon: "); tft.println(lon, 3);
-}
-
-void setup() {
-  uint16_t ID = tft.readID();
-  tft.begin(ID);
-  tft.setRotation(1);
-  randomSeed(analogRead(0));
-
-  generateMap();
-}
-
-void loop() {
-
-  // erase previous player
-  drawCircleBlock(carX, carY, isRiver(carX, carY) ? C_BRIDGE : C_ROAD);
-
-  // erase previous other cars
-  for (int i = 0; i < 3; i++) {
-    drawCircleBlock(others[i].x, others[i].y, isRiver(others[i].x, others[i].y) ? C_BRIDGE : C_ROAD);
-  }
-
-  // Move player
-  carX++;
-  if (carX >= gridW) {
-    generateMap();
-    delay(200);
-    return;
-  }
-  carY = roadY[carX];
-
-  // Move other cars (simple random speed)
-  for (int i = 0; i < 3; i++) {
-    others[i].x += 1 + random(0, 2);
-    if (others[i].x >= gridW) others[i].x = 0;
-    others[i].y = roadY[others[i].x];
-  }
-
-  // draw player
-  drawCircleBlock(carX, carY, C_PLAYER);
-
-  // draw others
-  for (int i = 0; i < 3; i++) {
-    drawCircleBlock(others[i].x, others[i].y, C_OTHER);
-  }
-
-  // fake coordinates increment
-  lat += 0.0001;
-  lon += 0.0001;
-  drawCoordinates();
-
-  delay(50);
-}
+  window.addEventListener("beforeunload", () => {
+    db.ref('users/' + userId).remove();
+  });
+</script>
