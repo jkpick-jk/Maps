@@ -22,19 +22,8 @@
     cursor: pointer;
   }
 
-  #locateBtn {
-    top: 15px;
-    background: white;
-    border: 1px solid #ccc;
-  }
-
-  #resetBtn {
-    top: 60px;
-    background: #ff4d4d;
-    color: white;
-    border: none;
-  }
-
+  #locateBtn { top: 15px; background: white; border: 1px solid #ccc; }
+  #resetBtn { top: 60px; background: #ff4d4d; color: white; border: none; }
   #status {
     position: absolute;
     top: 110px;
@@ -73,113 +62,110 @@ var firebaseConfig = {
   messagingSenderId: "784214151922",
   appId: "1:784214151922:web:59de8fdaaaa7a059f9f66b"
 };
+
 firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 
 // ===== MAP SETUP =====
 var map = L.map('map').setView([14.5995, 120.9842], 15);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19
-}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
 var statusDiv = document.getElementById("status");
 
 // ===== USER SETUP =====
 var userId = db.ref("users").push().key;
 var myRef = db.ref("users/" + userId);
-myRef.onDisconnect().remove();
+myRef.onDisconnect().remove(); // remove user on disconnect
 
 var myMarker = null;
 var friendsMarkers = {};
 var watching = false;
 
-// ===== FIND ME =====
-document.getElementById("locateBtn").addEventListener("click", function () {
-  if (watching) return;
+// ===== HELPER: update my lastActive every 5s =====
+function heartbeat(lat, lng){
+  if(!myRef) return;
+  myRef.set({ lat: lat, lng: lng, lastActive: Date.now() });
+}
+
+// ===== FIND ME BUTTON =====
+document.getElementById("locateBtn").addEventListener("click", function(){
+
+  if(watching) return;
   watching = true;
 
-  if (!navigator.geolocation) {
-    alert("Geolocation not supported");
-    return;
-  }
+  if(!navigator.geolocation){ alert("Geolocation not supported"); return; }
 
-  navigator.geolocation.watchPosition(function(position) {
+  statusDiv.innerText = "Getting location...";
+
+  navigator.geolocation.watchPosition(function(position){
     var lat = position.coords.latitude;
     var lng = position.coords.longitude;
 
-    // Create or update your marker
-    if (!myMarker) {
-      myMarker = L.circleMarker([lat, lng], {
-        radius: 10,
-        color: "#ffffff",
-        fillColor: "#4285F4",
-        fillOpacity: 1
-      }).addTo(map).bindPopup("You");
+    if(!myMarker){
+      myMarker = L.circleMarker([lat, lng], { radius: 8, color:"#fff", fillColor:"#4285F4", fillOpacity:1 })
+                   .addTo(map).bindPopup("You");
     } else {
       myMarker.setLatLng([lat, lng]);
     }
 
     map.setView([lat, lng], 16);
 
-    // Save location with timestamp
-    myRef.set({
-      lat: lat,
-      lng: lng,
-      lastActive: Date.now()
-    });
+    heartbeat(lat, lng);
 
-    statusDiv.innerText = "Location active";
-
-  }, function(error) {
+  }, function(error){
     statusDiv.innerText = "GPS Error: " + error.message;
-  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+  }, { enableHighAccuracy:true, maximumAge:0 });
+
+  // Send heartbeat every 5 seconds in case watchPosition skips
+  setInterval(function(){
+    if(myMarker){
+      var latlng = myMarker.getLatLng();
+      heartbeat(latlng.lat, latlng.lng);
+    }
+  }, 5000);
 });
 
 // ===== RESET SERVER BUTTON =====
-document.getElementById("resetBtn").addEventListener("click", function () {
-  if (confirm("Clear ALL users from server?")) {
+document.getElementById("resetBtn").addEventListener("click", function(){
+  if(confirm("Clear ALL users from server?")){
     db.ref("users").remove();
   }
 });
 
 // ===== REALTIME LISTENER =====
-db.ref("users").on("value", function(snapshot) {
+db.ref("users").on("value", function(snapshot){
   var users = snapshot.val() || {};
   var now = Date.now();
-  var TIMEOUT = 180000; // 3 minutes for inactivity
+  var TIMEOUT = 60000; // 60s grace for disappearing
 
-  for (var id in users) {
+  // update friends
+  for(var id in users){
     var user = users[id];
 
-    // Remove inactive users automatically
-    if (now - user.lastActive > TIMEOUT) {
-      db.ref("users/" + id).remove();
+    // remove ghosts immediately if timeout
+    if(now - user.lastActive > TIMEOUT){
+      db.ref("users/"+id).remove();
       continue;
     }
 
-    if (id === userId) continue;
+    if(id === userId) continue;
 
-    // Smooth movement for friends
-    if (!friendsMarkers[id]) {
-      friendsMarkers[id] = L.circleMarker([user.lat, user.lng], {
-        radius: 12,
-        color: "#ffffff",
-        fillColor: "#FF3B3B",
-        fillOpacity: 1
-      }).addTo(map).bindPopup("Friend");
+    if(!friendsMarkers[id]){
+      friendsMarkers[id] = L.circleMarker([user.lat, user.lng], { radius:8, color:"#fff", fillColor:"#000", fillOpacity:1 })
+                             .addTo(map).bindPopup("Friend");
     } else {
-      // Animate smoothly
       friendsMarkers[id].setLatLng([user.lat, user.lng]);
     }
   }
 
-  // Remove markers that no longer exist
-  for (var id in friendsMarkers) {
-    if (!users[id]) {
+  // remove markers of deleted users
+  for(var id in friendsMarkers){
+    if(!users[id]){
       map.removeLayer(friendsMarkers[id]);
       delete friendsMarkers[id];
     }
   }
+
 });
 </script>
 
