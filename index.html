@@ -1,64 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Multi User Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+  body { margin: 0; }
+  #map { height: 100vh; width: 100%; }
+
+  #locateBtn, #resetBtn {
+    position: absolute;
+    left: 15px;
+    z-index: 1000;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  #locateBtn {
+    top: 15px;
+    background: white;
+    border: 1px solid #ccc;
+  }
+
+  #resetBtn {
+    top: 60px;
+    background: #ff4d4d;
+    color: white;
+    border: none;
+  }
+
+  #status {
+    position: absolute;
+    top: 110px;
+    left: 15px;
+    z-index: 1000;
+    background: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+</style>
+</head>
+
+<body>
+
+<button id="locateBtn">Find Me</button>
+<button id="resetBtn">Reset Server</button>
+<div id="status"></div>
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- Firebase v8 (MORE COMPATIBLE) -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
 <script>
-const firebaseConfig = {
+
+// ===== FIREBASE CONFIG =====
+var firebaseConfig = {
   apiKey: "AIzaSyCjgp9FkDk7DzaMMEjHVMb3KdByEY3ehIs",
   authDomain: "multimaps-f44a4.firebaseapp.com",
   databaseURL: "https://multimaps-f44a4-default-rtdb.firebaseio.com/",
   projectId: "multimaps-f44a4",
-  storageBucket: "multimaps-f44a4.firebasestorage.app",
+  storageBucket: "multimaps-f44a4.appspot.com",
   messagingSenderId: "784214151922",
   appId: "1:784214151922:web:59de8fdaaaa7a059f9f66b"
 };
 
 firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+var db = firebase.database();
 
-const map = L.map('map').setView([14.5995, 120.9842], 15);
+// ===== MAP SETUP =====
+var map = L.map('map').setView([14.5995, 120.9842], 13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19
 }).addTo(map);
 
-const statusDiv = document.getElementById("status");
-
-// ===== RESET BUTTON =====
-const resetBtn = document.createElement("button");
-resetBtn.innerText = "Reset Server";
-resetBtn.style.position = "absolute";
-resetBtn.style.top = "110px";
-resetBtn.style.left = "15px";
-resetBtn.style.zIndex = "1000";
-resetBtn.style.padding = "8px 12px";
-resetBtn.style.background = "#ff4d4d";
-resetBtn.style.color = "white";
-resetBtn.style.border = "none";
-resetBtn.style.borderRadius = "6px";
-resetBtn.style.cursor = "pointer";
-document.body.appendChild(resetBtn);
-
-resetBtn.addEventListener("click", () => {
-  if (confirm("Clear ALL users from server?")) {
-    db.ref("users").remove();
-  }
-});
+var statusDiv = document.getElementById("status");
 
 // ===== USER SETUP =====
-const userId = db.ref("users").push().key;
-const myRef = db.ref("users/" + userId);
+var userId = db.ref("users").push().key;
+var myRef = db.ref("users/" + userId);
 myRef.onDisconnect().remove();
 
-let myMarker = null;
-const friendsMarkers = {};
-let watching = false;
+var myMarker = null;
+var friendsMarkers = {};
+var watching = false;
 
-document.getElementById("locateBtn").addEventListener("click", () => {
+// ===== FIND ME =====
+document.getElementById("locateBtn").addEventListener("click", function () {
 
   if (watching) return;
   watching = true;
 
-  navigator.geolocation.watchPosition(position => {
+  if (!navigator.geolocation) {
+    alert("Geolocation not supported");
+    return;
+  }
 
-    const lat = position.coords.latitude;
-    const lng = position.coords.longitude;
+  navigator.geolocation.watchPosition(function(position) {
+
+    var lat = position.coords.latitude;
+    var lng = position.coords.longitude;
 
     if (!myMarker) {
       myMarker = L.circleMarker([lat, lng], {
@@ -73,33 +125,39 @@ document.getElementById("locateBtn").addEventListener("click", () => {
 
     map.setView([lat, lng], 16);
 
-    // 🔥 Save with timestamp
     myRef.set({
-      lat,
-      lng,
+      lat: lat,
+      lng: lng,
       lastActive: Date.now()
     });
 
     statusDiv.innerText = "Location active";
 
-  }, error => {
+  }, function(error) {
     statusDiv.innerText = error.message;
   }, { enableHighAccuracy: true });
 
 });
 
+// ===== RESET SERVER BUTTON =====
+document.getElementById("resetBtn").addEventListener("click", function () {
+  if (confirm("Clear ALL users from server?")) {
+    db.ref("users").remove();
+  }
+});
+
 // ===== REALTIME LISTENER =====
-db.ref("users").on("value", snapshot => {
+db.ref("users").on("value", function(snapshot) {
 
-  const users = snapshot.val() || {};
-  const now = Date.now();
-  const TIMEOUT = 30000; // 30 seconds
+  var users = snapshot.val() || {};
+  var now = Date.now();
+  var TIMEOUT = 30000; // 30 seconds
 
-  for (const id in users) {
+  for (var id in users) {
 
-    const user = users[id];
+    var user = users[id];
 
-    // 🔥 Remove inactive users automatically
+    // Remove inactive users automatically
     if (now - user.lastActive > TIMEOUT) {
       db.ref("users/" + id).remove();
       continue;
@@ -119,8 +177,8 @@ db.ref("users").on("value", snapshot => {
     }
   }
 
-  // Remove missing users visually
-  for (const id in friendsMarkers) {
+  // Remove markers that no longer exist
+  for (var id in friendsMarkers) {
     if (!users[id]) {
       map.removeLayer(friendsMarkers[id]);
       delete friendsMarkers[id];
@@ -128,4 +186,8 @@ db.ref("users").on("value", snapshot => {
   }
 
 });
+
 </script>
+
+</body>
+</html>
