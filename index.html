@@ -58,12 +58,11 @@
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-<!-- Firebase v8 (MORE COMPATIBLE) -->
+<!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
 <script>
-
 // ===== FIREBASE CONFIG =====
 var firebaseConfig = {
   apiKey: "AIzaSyCjgp9FkDk7DzaMMEjHVMb3KdByEY3ehIs",
@@ -74,13 +73,11 @@ var firebaseConfig = {
   messagingSenderId: "784214151922",
   appId: "1:784214151922:web:59de8fdaaaa7a059f9f66b"
 };
-
 firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 
 // ===== MAP SETUP =====
-var map = L.map('map').setView([14.5995, 120.9842], 13);
-
+var map = L.map('map').setView([14.5995, 120.9842], 15);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19
 }).addTo(map);
@@ -98,7 +95,6 @@ var watching = false;
 
 // ===== FIND ME =====
 document.getElementById("locateBtn").addEventListener("click", function () {
-
   if (watching) return;
   watching = true;
 
@@ -108,13 +104,13 @@ document.getElementById("locateBtn").addEventListener("click", function () {
   }
 
   navigator.geolocation.watchPosition(function(position) {
-
     var lat = position.coords.latitude;
     var lng = position.coords.longitude;
 
+    // Create or update your marker
     if (!myMarker) {
       myMarker = L.circleMarker([lat, lng], {
-        radius: 8,
+        radius: 10,
         color: "#ffffff",
         fillColor: "#4285F4",
         fillOpacity: 1
@@ -125,6 +121,7 @@ document.getElementById("locateBtn").addEventListener("click", function () {
 
     map.setView([lat, lng], 16);
 
+    // Save location with timestamp
     myRef.set({
       lat: lat,
       lng: lng,
@@ -134,9 +131,8 @@ document.getElementById("locateBtn").addEventListener("click", function () {
     statusDiv.innerText = "Location active";
 
   }, function(error) {
-    statusDiv.innerText = error.message;
-  }, { enableHighAccuracy: true });
-
+    statusDiv.innerText = "GPS Error: " + error.message;
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
 });
 
 // ===== RESET SERVER BUTTON =====
@@ -148,13 +144,11 @@ document.getElementById("resetBtn").addEventListener("click", function () {
 
 // ===== REALTIME LISTENER =====
 db.ref("users").on("value", function(snapshot) {
-
   var users = snapshot.val() || {};
   var now = Date.now();
-  var TIMEOUT = 30000; // 30 seconds
+  var TIMEOUT = 180000; // 3 minutes for inactivity
 
   for (var id in users) {
-
     var user = users[id];
 
     // Remove inactive users automatically
@@ -165,14 +159,16 @@ db.ref("users").on("value", function(snapshot) {
 
     if (id === userId) continue;
 
+    // Smooth movement for friends
     if (!friendsMarkers[id]) {
       friendsMarkers[id] = L.circleMarker([user.lat, user.lng], {
-        radius: 8,
+        radius: 12,
         color: "#ffffff",
-        fillColor: "#000000",
+        fillColor: "#FF3B3B",
         fillOpacity: 1
       }).addTo(map).bindPopup("Friend");
     } else {
+      // Animate smoothly
       friendsMarkers[id].setLatLng([user.lat, user.lng]);
     }
   }
@@ -184,9 +180,7 @@ db.ref("users").on("value", function(snapshot) {
       delete friendsMarkers[id];
     }
   }
-
 });
-
 </script>
 
 </body>
