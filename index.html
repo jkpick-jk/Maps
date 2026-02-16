@@ -52,13 +52,13 @@
 <script>
   // ===== FIREBASE CONFIG =====
   const firebaseConfig = {
-    apiKey: "AIzaSyCjgp9FkDk7DzaMMEjHVMb3KdByEY3ehIs",
-    authDomain: "multimaps-f44a4.firebaseapp.com",
-    databaseURL: "https://multimaps-f44a4-default-rtdb.firebaseio.com/",
-    projectId: "multimaps-f44a4",
-    storageBucket: "multimaps-f44a4.appspot.com",
-    messagingSenderId: "784214151922",
-    appId: "1:784214151922:web:59de8fdaaaa7a059f9f66b"
+    apiKey: "YOUR_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    databaseURL: "YOUR_DATABASE_URL",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_BUCKET",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
   };
 
   firebase.initializeApp(firebaseConfig);
@@ -75,12 +75,21 @@
   const statusDiv = document.getElementById("status");
 
   // ===== USER SETUP =====
-  const userId = 'user_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+  const userId = db.ref("users").push().key; // safer unique id
   let myMarker = null;
   const friendsMarkers = {};
+  let watching = false;
+
+  const myRef = db.ref("users/" + userId);
+
+  // 🔥 REMOVE USER AUTOMATICALLY ON DISCONNECT
+  myRef.onDisconnect().remove();
 
   // ===== FIND ME BUTTON =====
   document.getElementById("locateBtn").addEventListener("click", () => {
+
+    if (watching) return; // prevent multiple watchers
+    watching = true;
 
     if (!navigator.geolocation) {
       alert("Geolocation not supported");
@@ -94,7 +103,7 @@
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
-        // Create or update your blue marker
+        // Create or update your marker
         if (!myMarker) {
           myMarker = L.circleMarker([lat, lng], {
             radius: 8,
@@ -108,8 +117,8 @@
 
         map.setView([lat, lng], 16);
 
-        // Save to Firebase
-        db.ref("users/" + userId).set({ lat, lng });
+        // Save location
+        myRef.set({ lat, lng });
 
         statusDiv.innerText = "Location active!";
       },
@@ -125,6 +134,7 @@
     const users = snapshot.val() || {};
 
     for (const id in users) {
+
       if (id === userId) continue;
 
       const { lat, lng } = users[id];
@@ -141,18 +151,13 @@
       }
     }
 
-    // Remove users who left
+    // Remove users who disappeared
     for (const id in friendsMarkers) {
       if (!users[id]) {
         map.removeLayer(friendsMarkers[id]);
         delete friendsMarkers[id];
       }
     }
-  });
-
-  // Remove yourself when closing
-  window.addEventListener("beforeunload", () => {
-    db.ref("users/" + userId).remove();
   });
 </script>
 
